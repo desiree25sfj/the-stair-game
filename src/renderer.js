@@ -4,6 +4,14 @@
   const config = window.StairGameConfig;
   const { clamp } = window.StairGameUtils;
 
+  const clouds = [
+    { x: 0.12, y: 0.16, width: 118, speed: 9, phase: 0.15 },
+    { x: 0.72, y: 0.22, width: 150, speed: 6, phase: 0.62 },
+    { x: 0.38, y: 0.34, width: 98, speed: 7.5, phase: 0.88 },
+    { x: 0.9, y: 0.12, width: 132, speed: 5.5, phase: 0.34 },
+    { x: 0.54, y: 0.28, width: 176, speed: 4.5, phase: 0.74 }
+  ];
+
   function createRenderer(canvas) {
     const ctx = canvas.getContext("2d");
     let width = 0;
@@ -21,7 +29,8 @@
 
     function render(snapshot) {
       ctx.clearRect(0, 0, width, height);
-      renderBackground(snapshot.cameraY);
+      renderBackground(snapshot.score, snapshot.cameraY);
+      renderClouds(snapshot.score, snapshot.worldTime);
 
       ctx.save();
       if (snapshot.shakeTime > 0) {
@@ -29,16 +38,18 @@
         ctx.translate(Math.sin(snapshot.shakeTime * 120) * amount, Math.cos(snapshot.shakeTime * 90) * amount);
       }
 
+      renderGround(snapshot.camera);
       renderStairs(snapshot.stairs, snapshot.camera, snapshot.player.row);
       renderPlayer(snapshot.player, snapshot.camera, snapshot.state === "gameOver");
       renderDirectionHint(snapshot.player.queuedDirection, snapshot.state);
       ctx.restore();
     }
 
-    function renderBackground(cameraY) {
+    function renderBackground(score, cameraY) {
+      const sky = getSkyColors(score);
       const gradient = ctx.createLinearGradient(0, 0, 0, height);
-      gradient.addColorStop(0, "#111821");
-      gradient.addColorStop(1, "#07080a");
+      gradient.addColorStop(0, sky.top);
+      gradient.addColorStop(1, sky.bottom);
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
 
@@ -49,8 +60,53 @@
       }
     }
 
+    function renderClouds(score, worldTime) {
+      const earlySky = smoothProgress(score, config.skyPhaseStart, config.skyPhaseFull);
+      const highSky = smoothProgress(score, config.highAltitudeStart, config.highAltitudeFull);
+      const cloudAlpha = earlySky * 0.12 + highSky * 0.13;
+      if (cloudAlpha <= 0.01) return;
+
+      const visibleClouds = 2 + Math.floor(highSky * 3);
+      for (let i = 0; i < visibleClouds; i += 1) {
+        const cloud = clouds[i];
+        const travel = width + cloud.width * 2;
+        const x = ((cloud.x * width + worldTime * cloud.speed + cloud.phase * travel) % travel) - cloud.width;
+        const y = height * cloud.y;
+        renderCloud(x, y, cloud.width, cloudAlpha * (0.7 + i * 0.08));
+      }
+    }
+
+    function renderCloud(x, y, cloudWidth, alpha) {
+      const h = cloudWidth * 0.22;
+      ctx.fillStyle = `rgba(218, 230, 238, ${alpha})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y, cloudWidth * 0.28, h * 0.55, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + cloudWidth * 0.22, y - h * 0.12, cloudWidth * 0.34, h * 0.72, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + cloudWidth * 0.5, y, cloudWidth * 0.3, h * 0.58, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function renderGround(camera) {
+      const ground = camera.worldToScreen(config.startRow, 0);
+      const groundWidth = config.groundWidthTiles * config.tileWidth;
+      const x = ground.x - groundWidth / 2;
+      const y = ground.y - config.tileHeight / 2;
+
+      ctx.fillStyle = "rgba(232, 235, 232, 0.96)";
+      ctx.fillRect(x, y, groundWidth, config.tileHeight);
+
+      ctx.fillStyle = "rgba(99, 113, 112, 0.96)";
+      ctx.fillRect(x, y + config.tileHeight - 8, groundWidth, 8);
+
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.78)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, groundWidth - 2, config.tileHeight - 2);
+    }
+
     function renderStairs(stairs, camera, playerRow) {
       for (const step of stairs) {
+        if (step.ground) continue;
+
         const screen = camera.worldToScreen(step.row, step.lane);
         if (screen.y < -config.tileHeight || screen.y > height + config.tileHeight) continue;
 
@@ -69,6 +125,38 @@
         ctx.lineWidth = 2;
         ctx.strokeRect(x + 1, y + 1, config.tileWidth - 2, config.tileHeight - 2);
       }
+    }
+
+    function getSkyColors(score) {
+      const earlySky = smoothProgress(score, config.skyPhaseStart, config.skyPhaseFull);
+      const highSky = smoothProgress(score, config.highAltitudeStart, config.highAltitudeFull);
+      const top = mixColor(mixColor("#111821", "#18385d", earlySky), "#78aede", highSky);
+      const bottom = mixColor(mixColor("#07080a", "#0b182d", earlySky), "#244e73", highSky);
+
+      return { top, bottom };
+    }
+
+    function smoothProgress(value, start, end) {
+      const t = clamp((value - start) / (end - start), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+
+    function mixColor(fromHex, toHex, amount) {
+      const from = hexToRgb(fromHex);
+      const to = hexToRgb(toHex);
+      const r = Math.round(from.r + (to.r - from.r) * amount);
+      const g = Math.round(from.g + (to.g - from.g) * amount);
+      const b = Math.round(from.b + (to.b - from.b) * amount);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    function hexToRgb(hex) {
+      const value = Number.parseInt(hex.slice(1), 16);
+      return {
+        r: (value >> 16) & 255,
+        g: (value >> 8) & 255,
+        b: value & 255
+      };
     }
 
     function renderPlayer(player, camera, isDead) {

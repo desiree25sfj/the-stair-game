@@ -2,10 +2,12 @@
   "use strict";
 
   window.StairGameConfig = {
-    highScoreKey: "stair-game-high-score",
-    startRow: 5,
+    highScoreKey: "stairGameHighScore",
+    legacyHighScoreKey: "stair-game-high-score",
+    startRow: 0,
     tileWidth: 78,
     tileHeight: 38,
+    groundWidthTiles: 7,
     lookAhead: 34,
     keepBehind: 8,
     minLane: -5,
@@ -20,6 +22,10 @@
     inputDebounceMs: 70,
     cameraFollowSharpness: 0.001,
     shakeDuration: 0.18,
+    skyPhaseStart: 50,
+    skyPhaseFull: 150,
+    highAltitudeStart: 150,
+    highAltitudeFull: 260,
     seedBase: 1299721
   };
 })();

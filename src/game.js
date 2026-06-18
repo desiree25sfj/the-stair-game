@@ -18,6 +18,7 @@
     let cameraY = 0;
     let shakeTime = 0;
     let runNumber = 0;
+    let worldTime = 0;
 
     const camera = {
       worldToScreen(row, lane) {
@@ -35,6 +36,7 @@
       state = "running";
       speed = config.baseSpeed;
       shakeTime = 0;
+      worldTime = 0;
       runNumber += 1;
 
       stairs.reset(config.startRow, config.seedBase + runNumber * 9973);
@@ -51,6 +53,7 @@
 
     function update(dt) {
       const cappedDt = Math.min(dt, 0.035);
+      worldTime += cappedDt;
       processInput();
 
       if (state === "running") {
@@ -126,6 +129,7 @@
         score,
         highScore,
         shakeTime,
+        worldTime,
         cameraY,
         camera,
         stairs: stairs.steps,
@@ -151,7 +155,15 @@
     }
 
     function readHighScore() {
-      return Number(localStorage.getItem(config.highScoreKey) || 0);
+      const current = Number(localStorage.getItem(config.highScoreKey) || 0);
+      const legacy = Number(localStorage.getItem(config.legacyHighScoreKey) || 0);
+      const best = Math.max(current, legacy);
+
+      if (best > current) {
+        localStorage.setItem(config.highScoreKey, String(best));
+      }
+
+      return best;
     }
 
     return {

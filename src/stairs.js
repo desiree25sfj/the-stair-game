@@ -19,7 +19,7 @@
         this.generatedRows = 0;
         this.random = createSeededRandom(seed);
 
-        this.steps.push({ row: 0, lane: 0 });
+        this.steps.push({ row: startRow, lane: 0, ground: true });
         this.generatedRows = 1;
         this.generateUntil(startRow + config.lookAhead, 0);
       },
