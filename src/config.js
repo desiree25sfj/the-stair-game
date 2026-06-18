@@ -22,11 +22,12 @@
     inputDebounceMs: 70,
     cameraFollowSharpness: 0.001,
     shakeDuration: 0.18,
-    skyBaseEnd: 50,
-    skyTransitionEnd: 100,
-    skyRevealEnd: 150,
-    highAltitudeFull: 230,
-    cloudStart: 100,
+    undergroundEnd: 50,
+    skyAscentEnd: 150,
+    cloudRealmStart: 150,
+    cloudChaosStart: 400,
+    spaceStart: 500,
+    spaceFull: 620,
     seedBase: 1299721
   };
 })();
