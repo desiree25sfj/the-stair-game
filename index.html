@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stair Game</title>
+  <link rel="stylesheet" href="styles/styles.css">
+</head>
+<body>
+  <main class="shell" aria-label="Stair Game">
+    <canvas id="gameCanvas" width="900" height="700"></canvas>
+
+    <section class="hud" aria-live="polite">
+      <div>
+        <span class="label">Score</span>
+        <strong id="score">0</strong>
+      </div>
+      <div>
+        <span class="label">Best</span>
+        <strong id="highScore">0</strong>
+      </div>
+    </section>
+
+    <section class="game-over" id="gameOver" aria-hidden="true">
+      <div class="game-over-panel">
+        <h1>Game Over</h1>
+        <p>Score <strong id="finalScore">0</strong></p>
+        <p>Best <strong id="finalHighScore">0</strong></p>
+        <p class="restart-copy">Press Space or click to restart</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="src/main.js"></script>
+</body>
+</html>
