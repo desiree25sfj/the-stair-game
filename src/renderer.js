@@ -2,28 +2,7 @@
   "use strict";
 
   const config = window.StairGameConfig;
-  const { clamp } = window.StairGameUtils;
-
-  const cloudSets = {
-    background: [
-      { x: 0.08, y: 0.14, width: 130, speed: 5.2, phase: 0.11 },
-      { x: 0.68, y: 0.24, width: 170, speed: 4.4, phase: 0.63 },
-      { x: 0.35, y: 0.34, width: 116, speed: 4.9, phase: 0.88 },
-      { x: 0.9, y: 0.18, width: 145, speed: 3.8, phase: 0.31 },
-      { x: 0.52, y: 0.28, width: 190, speed: 3.4, phase: 0.74 }
-    ],
-    mid: [
-      { x: 0.18, y: 0.48, width: 142, speed: 7.1, phase: 0.21 },
-      { x: 0.76, y: 0.58, width: 188, speed: 6.4, phase: 0.56 },
-      { x: 0.46, y: 0.42, width: 128, speed: 7.8, phase: 0.82 },
-      { x: 0.96, y: 0.52, width: 168, speed: 5.9, phase: 0.37 }
-    ],
-    foreground: [
-      { x: 0.08, y: 0.66, width: 210, speed: 8.5, phase: 0.18 },
-      { x: 0.72, y: 0.72, width: 250, speed: 7.2, phase: 0.69 },
-      { x: 0.4, y: 0.62, width: 190, speed: 9.3, phase: 0.44 }
-    ]
-  };
+  const { clamp, createSeededRandom, randomBetween } = window.StairGameUtils;
 
   const stars = [
     { x: 0.08, y: 0.12, r: 1.1, phase: 0.1 },
@@ -45,6 +24,7 @@
 
   function createRenderer(canvas) {
     const ctx = canvas.getContext("2d");
+    const cloudFields = createCloudFields();
     let width = 0;
     let height = 0;
 
@@ -75,9 +55,9 @@
 
       renderGround(snapshot.camera);
       renderStairs(snapshot.stairs, snapshot.camera, snapshot.player.row);
-      renderCloudLayer("mid", atmosphere, snapshot.worldTime);
-      renderCloudLayer("foreground", atmosphere, snapshot.worldTime);
+      renderCloudLayer("midground", atmosphere, snapshot.worldTime);
       renderPlayer(snapshot.player, snapshot.camera, snapshot.state === "gameOver");
+      renderCloudLayer("foreground", atmosphere, snapshot.worldTime);
       ctx.restore();
     }
 
@@ -120,23 +100,20 @@
     }
 
     function renderCloudLayer(layerName, atmosphere, worldTime) {
-      const layer = getCloudLayerSettings(layerName, atmosphere);
-      if (layer.alpha <= 0.01 || layer.count <= 0) return;
+      const layer = getCloudLayerState(layerName, atmosphere);
+      if (layer.visibility <= 0.01) return;
 
-      const clouds = cloudSets[layerName];
-      for (let i = 0; i < layer.count; i += 1) {
-        const cloud = clouds[i % clouds.length];
-        const speed = cloud.speed * layer.speedMultiplier;
-        const drift = Math.sin(worldTime * 0.45 + cloud.phase * 8) * layer.unpredictability;
-        const travel = width + cloud.width * 2;
-        const x = ((cloud.x * width + worldTime * speed + cloud.phase * travel) % travel) - cloud.width;
-        const y = height * cloud.y + drift;
-        const alpha = layer.alpha * (0.82 + (i % 3) * 0.08);
-        renderCloud(x, y, cloud.width * layer.scale, alpha);
+      const clouds = cloudFields[layerName];
+      const activeCount = Math.ceil(clouds.length * layer.density);
+      for (let i = 0; i < activeCount; i += 1) {
+        const cloud = clouds[i];
+        const position = getCloudPosition(cloud, layer, worldTime);
+        const alpha = cloud.opacity * layer.visibility * layer.alphaScale;
+        renderCloud(position.x, position.y, cloud.width * layer.scale, alpha, layer.maxAlpha);
       }
     }
 
-    function getCloudLayerSettings(layerName, atmosphere) {
+    function getCloudLayerState(layerName, atmosphere) {
       const sky = atmosphere.skyAscent;
       const realm = atmosphere.cloudRealm;
       const chaos = atmosphere.cloudChaos;
@@ -144,35 +121,59 @@
 
       if (layerName === "background") {
         return {
-          alpha: (sky * 0.1 + realm * 0.14 + chaos * 0.05) * air,
-          count: Math.floor(sky * 2 + realm * 3 + chaos * 1),
-          speedMultiplier: 1 + chaos * 0.35,
-          unpredictability: chaos * 10,
-          scale: 1
+          visibility: sky * air,
+          density: clamp(sky * 0.45 + realm * 0.35 + chaos * 0.15, 0, 1) * air,
+          alphaScale: 0.68 + realm * 0.28,
+          speedScale: 0.85 + chaos * 0.2,
+          driftScale: 0.55 + realm * 0.25,
+          clusterPush: realm * 14,
+          scale: 1,
+          maxAlpha: config.cloudBackgroundMaxAlpha
         };
       }
 
-      if (layerName === "mid") {
+      if (layerName === "midground") {
         return {
-          alpha: (realm * 0.11 + chaos * 0.08) * air,
-          count: Math.floor(realm * 2 + chaos * 2),
-          speedMultiplier: 1.08 + chaos * 0.4,
-          unpredictability: chaos * 14,
-          scale: 1.08
+          visibility: realm * air,
+          density: clamp(realm * 0.65 + chaos * 0.35, 0, 1) * air,
+          alphaScale: 0.78 + chaos * 0.25,
+          speedScale: 1 + chaos * 0.35,
+          driftScale: 1 + chaos * 0.45,
+          clusterPush: realm * 20 + chaos * 18,
+          scale: 1.06,
+          maxAlpha: config.cloudMidgroundMaxAlpha
         };
       }
 
       return {
-        alpha: (realm * 0.06 + chaos * 0.13) * air,
-        count: Math.floor(realm * 1 + chaos * 2),
-        speedMultiplier: 1.12 + chaos * 0.55,
-        unpredictability: chaos * 18,
-        scale: 1.18
+        visibility: chaos * air,
+        density: clamp(chaos * 0.95, 0, 1) * air,
+        alphaScale: 0.86 + chaos * 0.34,
+        speedScale: 1.08 + chaos * 0.65,
+        driftScale: 1.15 + chaos * 0.75,
+        clusterPush: chaos * 42,
+        scale: 1.18,
+        maxAlpha: config.cloudForegroundMaxAlpha
       };
     }
 
-    function renderCloud(x, y, cloudWidth, alpha) {
-      const cappedAlpha = clamp(alpha, 0, 0.26);
+    function getCloudPosition(cloud, layer, worldTime) {
+      const travel = width + cloud.width * 2;
+      const burst = cloud.burst * Math.max(0, Math.sin(worldTime * cloud.burstRate + cloud.phase * 11));
+      const distance = worldTime * (cloud.speed + burst) * cloud.direction * layer.speedScale;
+      const cluster = Math.sin(worldTime * 0.18 + cloud.clusterPhase) * layer.clusterPush * cloud.clusterWeight;
+      const wrapped = positiveModulo(cloud.x * width + distance + cluster + cloud.phase * travel, travel);
+      const verticalDrift = Math.sin(worldTime * cloud.driftRate + cloud.phase * 9) * cloud.drift * layer.driftScale;
+      const diagonal = worldTime * cloud.diagonal * layer.driftScale;
+
+      return {
+        x: wrapped - cloud.width,
+        y: height * cloud.y + verticalDrift + diagonal
+      };
+    }
+
+    function renderCloud(x, y, cloudWidth, alpha, maxAlpha) {
+      const cappedAlpha = clamp(alpha, 0, maxAlpha);
       const h = cloudWidth * 0.22;
       ctx.fillStyle = `rgba(234, 241, 246, ${cappedAlpha})`;
       ctx.beginPath();
@@ -252,40 +253,6 @@
       };
     }
 
-    function smoothProgress(value, start, end) {
-      const t = clamp((value - start) / (end - start), 0, 1);
-      return t * t * (3 - 2 * t);
-    }
-
-    function mixColor(fromColor, toColor, amount) {
-      const from = parseColor(fromColor);
-      const to = parseColor(toColor);
-      const r = Math.round(from.r + (to.r - from.r) * amount);
-      const g = Math.round(from.g + (to.g - from.g) * amount);
-      const b = Math.round(from.b + (to.b - from.b) * amount);
-      return `rgb(${r}, ${g}, ${b})`;
-    }
-
-    function parseColor(color) {
-      if (color.startsWith("#")) return hexToRgb(color);
-
-      const channels = color.match(/\d+/g).map(Number);
-      return {
-        r: channels[0],
-        g: channels[1],
-        b: channels[2]
-      };
-    }
-
-    function hexToRgb(hex) {
-      const value = Number.parseInt(hex.slice(1), 16);
-      return {
-        r: (value >> 16) & 255,
-        g: (value >> 8) & 255,
-        b: value & 255
-      };
-    }
-
     function renderPlayer(player, camera, isDead) {
       const pos = player.getVisualPosition(camera);
       const bounce = isDead ? 0 : Math.sin(player.walkTime * 16) * 3;
@@ -323,6 +290,123 @@
       getSize() {
         return { width, height };
       }
+    };
+  }
+
+  function createCloudFields() {
+    const random = createSeededRandom(config.seedBase + 404);
+
+    return {
+      background: createCloudLayer(random, "background", config.cloudBackgroundCount),
+      midground: createCloudLayer(random, "midground", config.cloudMidgroundCount),
+      foreground: createCloudLayer(random, "foreground", config.cloudForegroundCount)
+    };
+  }
+
+  function createCloudLayer(random, layerName, count) {
+    const clouds = [];
+    const presets = {
+      background: {
+        yMin: 0.1,
+        yMax: 0.38,
+        wMin: 120,
+        wMax: 220,
+        speedMin: 2.4,
+        speedMax: 6,
+        driftMin: 3,
+        driftMax: 12,
+        opacityMin: 0.45,
+        opacityMax: 0.9,
+        diagonal: 1.2
+      },
+      midground: {
+        yMin: 0.28,
+        yMax: 0.66,
+        wMin: 135,
+        wMax: 245,
+        speedMin: 5,
+        speedMax: 11,
+        driftMin: 8,
+        driftMax: 24,
+        opacityMin: 0.5,
+        opacityMax: 1,
+        diagonal: 3.2
+      },
+      foreground: {
+        yMin: 0.44,
+        yMax: 0.78,
+        wMin: 190,
+        wMax: 320,
+        speedMin: 6.5,
+        speedMax: 15,
+        driftMin: 12,
+        driftMax: 34,
+        opacityMin: 0.55,
+        opacityMax: 1,
+        diagonal: 5
+      }
+    };
+    const p = presets[layerName];
+
+    for (let i = 0; i < count; i += 1) {
+      const cluster = Math.floor(i / 2);
+      const direction = random() < 0.5 ? -1 : 1;
+      clouds.push({
+        x: (i / count + randomBetween(random, -0.08, 0.08) + 1) % 1,
+        y: randomBetween(random, p.yMin, p.yMax),
+        width: randomBetween(random, p.wMin, p.wMax),
+        speed: randomBetween(random, p.speedMin, p.speedMax),
+        direction,
+        diagonal: randomBetween(random, -p.diagonal, p.diagonal),
+        drift: randomBetween(random, p.driftMin, p.driftMax),
+        driftRate: randomBetween(random, 0.22, 0.7),
+        opacity: randomBetween(random, p.opacityMin, p.opacityMax),
+        phase: random(),
+        burst: layerName === "foreground" ? randomBetween(random, 0, 4.8) : randomBetween(random, 0, 1.8),
+        burstRate: randomBetween(random, 0.08, 0.2),
+        clusterPhase: cluster * 1.7 + randomBetween(random, -0.25, 0.25),
+        clusterWeight: randomBetween(random, 0.4, 1)
+      });
+    }
+
+    return clouds;
+  }
+
+  function positiveModulo(value, size) {
+    return ((value % size) + size) % size;
+  }
+
+  function smoothProgress(value, start, end) {
+    const t = clamp((value - start) / (end - start), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  function mixColor(fromColor, toColor, amount) {
+    const from = parseColor(fromColor);
+    const to = parseColor(toColor);
+    const r = Math.round(from.r + (to.r - from.r) * amount);
+    const g = Math.round(from.g + (to.g - from.g) * amount);
+    const b = Math.round(from.b + (to.b - from.b) * amount);
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  function parseColor(color) {
+    if (color.startsWith("#")) return hexToRgb(color);
+
+    const channels = color.match(/\d+/g).map(Number);
+    return {
+      r: channels[0],
+      g: channels[1],
+      b: channels[2]
+    };
+  }
+
+  function hexToRgb(hex) {
+    const value = Number.parseInt(hex.slice(1), 16);
+    return {
+      r: (value >> 16) & 255,
+      g: (value >> 8) & 255,
+      b: value & 255
     };
   }
 
