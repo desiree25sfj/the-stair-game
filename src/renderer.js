@@ -104,11 +104,13 @@
       if (layer.visibility <= 0.01) return;
 
       const clouds = cloudFields[layerName];
-      const activeCount = Math.ceil(clouds.length * layer.density);
-      for (let i = 0; i < activeCount; i += 1) {
-        const cloud = clouds[i];
+      for (const cloud of clouds) {
         const position = getCloudPosition(cloud, layer, worldTime);
-        const alpha = cloud.opacity * layer.visibility * layer.alphaScale;
+        const layerFade = smoothProgress(layer.density, cloud.activation, cloud.activation + cloud.fadeSpan);
+        const edgeFade = getEdgeFade(position.x, cloud.width * layer.scale);
+        const alpha = cloud.opacity * layer.visibility * layer.alphaScale * layerFade * edgeFade;
+        if (alpha <= 0.01) continue;
+
         renderCloud(position.x, position.y, cloud.width * layer.scale, alpha, layer.maxAlpha);
       }
     }
@@ -116,17 +118,18 @@
     function getCloudLayerState(layerName, atmosphere) {
       const sky = atmosphere.skyAscent;
       const realm = atmosphere.cloudRealm;
-      const chaos = atmosphere.cloudChaos;
-      const air = 1 - atmosphere.space;
+      const peak = atmosphere.cloudPeak;
+      const exit = atmosphere.cloudExit;
+      const air = (1 - exit) * (1 - atmosphere.space);
+      const exitDrop = height * exit * 0.38;
 
       if (layerName === "background") {
         return {
           visibility: sky * air,
-          density: clamp(sky * 0.45 + realm * 0.35 + chaos * 0.15, 0, 1) * air,
-          alphaScale: 0.68 + realm * 0.28,
-          speedScale: 0.85 + chaos * 0.2,
-          driftScale: 0.55 + realm * 0.25,
-          clusterPush: realm * 14,
+          density: clamp(sky * 0.38 + realm * 0.34 + peak * 0.18 - exit * 0.72, 0, 1) * air,
+          alphaScale: 0.55 + realm * 0.24,
+          speedScale: 0.85,
+          exitDrop,
           scale: 1,
           maxAlpha: config.cloudBackgroundMaxAlpha
         };
@@ -135,23 +138,21 @@
       if (layerName === "midground") {
         return {
           visibility: realm * air,
-          density: clamp(realm * 0.65 + chaos * 0.35, 0, 1) * air,
-          alphaScale: 0.78 + chaos * 0.25,
-          speedScale: 1 + chaos * 0.35,
-          driftScale: 1 + chaos * 0.45,
-          clusterPush: realm * 20 + chaos * 18,
+          density: clamp(realm * 0.5 + peak * 0.35 - exit * 0.78, 0, 1) * air,
+          alphaScale: 0.66 + peak * 0.24,
+          speedScale: 1,
+          exitDrop: exitDrop * 1.15,
           scale: 1.06,
           maxAlpha: config.cloudMidgroundMaxAlpha
         };
       }
 
       return {
-        visibility: chaos * air,
-        density: clamp(chaos * 0.95, 0, 1) * air,
-        alphaScale: 0.86 + chaos * 0.34,
-        speedScale: 1.08 + chaos * 0.65,
-        driftScale: 1.15 + chaos * 0.75,
-        clusterPush: chaos * 42,
+        visibility: peak * air,
+        density: clamp(peak * 0.42 - exit * 0.5, 0, 0.42) * air,
+        alphaScale: 0.78 + peak * 0.22,
+        speedScale: 1.08,
+        exitDrop: exitDrop * 1.3,
         scale: 1.18,
         maxAlpha: config.cloudForegroundMaxAlpha
       };
@@ -159,17 +160,20 @@
 
     function getCloudPosition(cloud, layer, worldTime) {
       const travel = width + cloud.width * 2;
-      const burst = cloud.burst * Math.max(0, Math.sin(worldTime * cloud.burstRate + cloud.phase * 11));
-      const distance = worldTime * (cloud.speed + burst) * cloud.direction * layer.speedScale;
-      const cluster = Math.sin(worldTime * 0.18 + cloud.clusterPhase) * layer.clusterPush * cloud.clusterWeight;
-      const wrapped = positiveModulo(cloud.x * width + distance + cluster + cloud.phase * travel, travel);
-      const verticalDrift = Math.sin(worldTime * cloud.driftRate + cloud.phase * 9) * cloud.drift * layer.driftScale;
-      const diagonal = worldTime * cloud.diagonal * layer.driftScale;
+      const distance = worldTime * cloud.speed * cloud.direction * layer.speedScale;
+      const wrapped = positiveModulo(cloud.x * width + distance + cloud.phase * travel, travel);
 
       return {
         x: wrapped - cloud.width,
-        y: height * cloud.y + verticalDrift + diagonal
+        y: height * cloud.y + layer.exitDrop
       };
+    }
+
+    function getEdgeFade(x, cloudWidth) {
+      const fadeDistance = cloudWidth * 0.7;
+      const leftFade = clamp((x + cloudWidth) / fadeDistance, 0, 1);
+      const rightFade = clamp((width - x) / fadeDistance, 0, 1);
+      return Math.min(leftFade, rightFade);
     }
 
     function renderCloud(x, y, cloudWidth, alpha, maxAlpha) {
@@ -227,8 +231,9 @@
     function getAtmosphere(score) {
       const underground = smoothProgress(score, 0, config.undergroundEnd) * 0.12;
       const skyAscent = smoothProgress(score, config.undergroundEnd, config.skyAscentEnd);
-      const cloudRealm = smoothProgress(score, config.cloudRealmStart, config.cloudChaosStart);
-      const cloudChaos = smoothProgress(score, config.cloudChaosStart, config.spaceStart);
+      const cloudRealm = smoothProgress(score, config.cloudRealmStart, config.cloudPeakStart);
+      const cloudPeak = smoothProgress(score, config.cloudPeakStart, config.cloudChaosStart);
+      const cloudExit = smoothProgress(score, config.cloudChaosStart, config.spaceStart);
       const space = smoothProgress(score, config.spaceStart, config.spaceFull);
 
       const undergroundTop = mixColor("#09090c", "#111421", underground);
@@ -237,8 +242,8 @@
       const skyBottom = mixColor(undergroundBottom, "#2f6f9f", skyAscent);
       const cloudTop = mixColor(skyTop, "#9ed0f4", cloudRealm);
       const cloudBottom = mixColor(skyBottom, "#5d99bf", cloudRealm);
-      const chaosTop = mixColor(cloudTop, "#b9dcf7", cloudChaos * 0.45);
-      const chaosBottom = mixColor(cloudBottom, "#73abc9", cloudChaos * 0.35);
+      const chaosTop = mixColor(cloudTop, "#b9dcf7", cloudPeak * 0.45);
+      const chaosBottom = mixColor(cloudBottom, "#73abc9", cloudPeak * 0.35);
       const top = mixColor(chaosTop, "#020717", space);
       const bottom = mixColor(chaosBottom, "#071329", space);
 
@@ -246,7 +251,8 @@
         underground,
         skyAscent,
         cloudRealm,
-        cloudChaos,
+        cloudPeak,
+        cloudExit,
         space,
         top,
         bottom
@@ -313,11 +319,8 @@
         wMax: 220,
         speedMin: 2.4,
         speedMax: 6,
-        driftMin: 3,
-        driftMax: 12,
         opacityMin: 0.45,
-        opacityMax: 0.9,
-        diagonal: 1.2
+        opacityMax: 0.9
       },
       midground: {
         yMin: 0.28,
@@ -326,11 +329,8 @@
         wMax: 245,
         speedMin: 5,
         speedMax: 11,
-        driftMin: 8,
-        driftMax: 24,
         opacityMin: 0.5,
-        opacityMax: 1,
-        diagonal: 3.2
+        opacityMax: 1
       },
       foreground: {
         yMin: 0.44,
@@ -338,18 +338,14 @@
         wMin: 190,
         wMax: 320,
         speedMin: 6.5,
-        speedMax: 15,
-        driftMin: 12,
-        driftMax: 34,
+        speedMax: 13,
         opacityMin: 0.55,
-        opacityMax: 1,
-        diagonal: 5
+        opacityMax: 1
       }
     };
     const p = presets[layerName];
 
     for (let i = 0; i < count; i += 1) {
-      const cluster = Math.floor(i / 2);
       const direction = random() < 0.5 ? -1 : 1;
       clouds.push({
         x: (i / count + randomBetween(random, -0.08, 0.08) + 1) % 1,
@@ -357,15 +353,10 @@
         width: randomBetween(random, p.wMin, p.wMax),
         speed: randomBetween(random, p.speedMin, p.speedMax),
         direction,
-        diagonal: randomBetween(random, -p.diagonal, p.diagonal),
-        drift: randomBetween(random, p.driftMin, p.driftMax),
-        driftRate: randomBetween(random, 0.22, 0.7),
         opacity: randomBetween(random, p.opacityMin, p.opacityMax),
-        phase: random(),
-        burst: layerName === "foreground" ? randomBetween(random, 0, 4.8) : randomBetween(random, 0, 1.8),
-        burstRate: randomBetween(random, 0.08, 0.2),
-        clusterPhase: cluster * 1.7 + randomBetween(random, -0.25, 0.25),
-        clusterWeight: randomBetween(random, 0.4, 1)
+        activation: i / count,
+        fadeSpan: randomBetween(random, 0.12, 0.22),
+        phase: random()
       });
     }
 
