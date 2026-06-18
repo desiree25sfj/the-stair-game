@@ -22,10 +22,11 @@
     inputDebounceMs: 70,
     cameraFollowSharpness: 0.001,
     shakeDuration: 0.18,
-    skyPhaseStart: 50,
-    skyPhaseFull: 150,
-    highAltitudeStart: 150,
-    highAltitudeFull: 260,
+    skyBaseEnd: 50,
+    skyTransitionEnd: 100,
+    skyRevealEnd: 150,
+    highAltitudeFull: 230,
+    cloudStart: 100,
     seedBase: 1299721
   };
 })();

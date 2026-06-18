@@ -61,12 +61,13 @@
     }
 
     function renderClouds(score, worldTime) {
-      const earlySky = smoothProgress(score, config.skyPhaseStart, config.skyPhaseFull);
-      const highSky = smoothProgress(score, config.highAltitudeStart, config.highAltitudeFull);
-      const cloudAlpha = earlySky * 0.12 + highSky * 0.13;
-      if (cloudAlpha <= 0.01) return;
+      if (score < config.cloudStart) return;
 
-      const visibleClouds = 2 + Math.floor(highSky * 3);
+      const reveal = smoothProgress(score, config.cloudStart, config.skyRevealEnd);
+      const high = smoothProgress(score, config.skyRevealEnd, config.highAltitudeFull);
+      const cloudAlpha = 0.03 + reveal * 0.15 + high * 0.08;
+      const visibleClouds = 2 + Math.floor(reveal * 1.5) + Math.floor(high * 2);
+
       for (let i = 0; i < visibleClouds; i += 1) {
         const cloud = clouds[i];
         const travel = width + cloud.width * 2;
@@ -128,10 +129,19 @@
     }
 
     function getSkyColors(score) {
-      const earlySky = smoothProgress(score, config.skyPhaseStart, config.skyPhaseFull);
-      const highSky = smoothProgress(score, config.highAltitudeStart, config.highAltitudeFull);
-      const top = mixColor(mixColor("#111821", "#18385d", earlySky), "#78aede", highSky);
-      const bottom = mixColor(mixColor("#07080a", "#0b182d", earlySky), "#244e73", highSky);
+      const base = smoothProgress(score, 0, config.skyBaseEnd) * 0.14;
+      const transition = smoothProgress(score, config.skyBaseEnd, config.skyTransitionEnd);
+      const reveal = smoothProgress(score, config.skyTransitionEnd, config.skyRevealEnd);
+      const high = smoothProgress(score, config.skyRevealEnd, config.highAltitudeFull);
+
+      const stage1Top = mixColor("#080b11", "#101a28", base);
+      const stage1Bottom = mixColor("#030406", "#07101a", base);
+      const stage2Top = mixColor(stage1Top, "#275986", transition);
+      const stage2Bottom = mixColor(stage1Bottom, "#102945", transition);
+      const stage3Top = mixColor(stage2Top, "#6aa8da", reveal);
+      const stage3Bottom = mixColor(stage2Bottom, "#255d8b", reveal);
+      const top = mixColor(stage3Top, "#9ccaf0", high);
+      const bottom = mixColor(stage3Bottom, "#3f7da8", high);
 
       return { top, bottom };
     }
@@ -142,12 +152,23 @@
     }
 
     function mixColor(fromHex, toHex, amount) {
-      const from = hexToRgb(fromHex);
-      const to = hexToRgb(toHex);
+      const from = parseColor(fromHex);
+      const to = parseColor(toHex);
       const r = Math.round(from.r + (to.r - from.r) * amount);
       const g = Math.round(from.g + (to.g - from.g) * amount);
       const b = Math.round(from.b + (to.b - from.b) * amount);
       return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    function parseColor(color) {
+      if (color.startsWith("#")) return hexToRgb(color);
+
+      const channels = color.match(/\d+/g).map(Number);
+      return {
+        r: channels[0],
+        g: channels[1],
+        b: channels[2]
+      };
     }
 
     function hexToRgb(hex) {
