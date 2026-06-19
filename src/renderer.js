@@ -106,9 +106,7 @@
       const clouds = cloudFields[layerName];
       for (const cloud of clouds) {
         const position = getCloudPosition(cloud, layer, worldTime);
-        const layerFade = smoothProgress(layer.density, cloud.activation, cloud.activation + cloud.fadeSpan);
-        const edgeFade = getEdgeFade(position.x, cloud.width * layer.scale);
-        const alpha = cloud.opacity * layer.visibility * layer.alphaScale * layerFade * edgeFade;
+        const alpha = cloud.opacity * layer.visibility * layer.alphaScale;
         if (alpha <= 0.01) continue;
 
         renderCloud(position.x, position.y, cloud.width * layer.scale, alpha, layer.maxAlpha);
@@ -129,6 +127,7 @@
           density: clamp(sky * 0.38 + realm * 0.34 + peak * 0.18 - exit * 0.72, 0, 1) * air,
           alphaScale: 0.55 + realm * 0.24,
           speedScale: 0.85,
+          fallScale: 0.82,
           exitDrop,
           scale: 1,
           maxAlpha: config.cloudBackgroundMaxAlpha
@@ -141,6 +140,7 @@
           density: clamp(realm * 0.5 + peak * 0.35 - exit * 0.78, 0, 1) * air,
           alphaScale: 0.66 + peak * 0.24,
           speedScale: 1,
+          fallScale: 1,
           exitDrop: exitDrop * 1.15,
           scale: 1.06,
           maxAlpha: config.cloudMidgroundMaxAlpha
@@ -152,6 +152,7 @@
         density: clamp(peak * 0.42 - exit * 0.5, 0, 0.42) * air,
         alphaScale: 0.78 + peak * 0.22,
         speedScale: 1.08,
+        fallScale: 1.18,
         exitDrop: exitDrop * 1.3,
         scale: 1.18,
         maxAlpha: config.cloudForegroundMaxAlpha
@@ -159,21 +160,23 @@
     }
 
     function getCloudPosition(cloud, layer, worldTime) {
-      const travel = width + cloud.width * 2;
-      const distance = worldTime * cloud.speed * cloud.direction * layer.speedScale;
-      const wrapped = positiveModulo(cloud.x * width + distance + cloud.phase * travel, travel);
+      const cloudWidth = cloud.width * layer.scale;
+      const verticalMargin = cloudWidth * 0.35;
+      const verticalTravel = height + verticalMargin * 2;
+      const verticalDistance = worldTime * cloud.fallSpeed * layer.fallScale;
+      const verticalProgress = cloud.streamOffset * verticalTravel + verticalDistance;
+      const cycle = Math.floor(verticalProgress / verticalTravel);
+      const y = positiveModulo(verticalProgress, verticalTravel) - verticalMargin + layer.exitDrop;
+
+      const spawnTravel = width + cloudWidth;
+      const spawnX = positiveModulo(cloud.x * width + cycle * cloud.recycleOffset, spawnTravel) - cloudWidth * 0.5;
+      const passTime = positiveModulo(verticalProgress, verticalTravel) / (cloud.fallSpeed * layer.fallScale);
+      const horizontalDistance = passTime * cloud.speed * cloud.direction * layer.speedScale;
 
       return {
-        x: wrapped - cloud.width,
-        y: height * cloud.y + layer.exitDrop
+        x: spawnX + horizontalDistance,
+        y
       };
-    }
-
-    function getEdgeFade(x, cloudWidth) {
-      const fadeDistance = cloudWidth * 0.7;
-      const leftFade = clamp((x + cloudWidth) / fadeDistance, 0, 1);
-      const rightFade = clamp((width - x) / fadeDistance, 0, 1);
-      return Math.min(leftFade, rightFade);
     }
 
     function renderCloud(x, y, cloudWidth, alpha, maxAlpha) {
@@ -313,32 +316,32 @@
     const clouds = [];
     const presets = {
       background: {
-        yMin: 0.1,
-        yMax: 0.38,
         wMin: 120,
         wMax: 220,
-        speedMin: 2.4,
-        speedMax: 6,
+        speedMin: 1.4,
+        speedMax: 3.8,
+        fallMin: 12,
+        fallMax: 18,
         opacityMin: 0.45,
         opacityMax: 0.9
       },
       midground: {
-        yMin: 0.28,
-        yMax: 0.66,
         wMin: 135,
         wMax: 245,
-        speedMin: 5,
-        speedMax: 11,
+        speedMin: 2.1,
+        speedMax: 5.2,
+        fallMin: 16,
+        fallMax: 24,
         opacityMin: 0.5,
         opacityMax: 1
       },
       foreground: {
-        yMin: 0.44,
-        yMax: 0.78,
         wMin: 190,
         wMax: 320,
-        speedMin: 6.5,
-        speedMax: 13,
+        speedMin: 3,
+        speedMax: 6.4,
+        fallMin: 20,
+        fallMax: 30,
         opacityMin: 0.55,
         opacityMax: 1
       }
@@ -349,14 +352,13 @@
       const direction = random() < 0.5 ? -1 : 1;
       clouds.push({
         x: (i / count + randomBetween(random, -0.08, 0.08) + 1) % 1,
-        y: randomBetween(random, p.yMin, p.yMax),
         width: randomBetween(random, p.wMin, p.wMax),
         speed: randomBetween(random, p.speedMin, p.speedMax),
+        fallSpeed: randomBetween(random, p.fallMin, p.fallMax),
         direction,
         opacity: randomBetween(random, p.opacityMin, p.opacityMax),
-        activation: i / count,
-        fadeSpan: randomBetween(random, 0.12, 0.22),
-        phase: random()
+        streamOffset: (i / count + randomBetween(random, -0.03, 0.03) + 1) % 1,
+        recycleOffset: randomBetween(random, 90, 240)
       });
     }
 
