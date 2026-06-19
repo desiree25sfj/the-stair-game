@@ -29,12 +29,12 @@
     cloudChaosStart: 400,
     spaceStart: 500,
     spaceFull: 620,
-    cloudBackgroundCount: 18,
-    cloudMidgroundCount: 14,
-    cloudForegroundCount: 7,
-    cloudBackgroundMaxAlpha: 0.16,
+    cloudBackgroundCount: 28,
+    cloudMidgroundCount: 22,
+    cloudForegroundCount: 6,
+    cloudBackgroundMaxAlpha: 0.18,
     cloudMidgroundMaxAlpha: 0.2,
-    cloudForegroundMaxAlpha: 0.24,
+    cloudForegroundMaxAlpha: 0.13,
     seedBase: 1299721
   };
 })();

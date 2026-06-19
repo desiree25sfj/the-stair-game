@@ -101,12 +101,12 @@
 
     function renderCloudLayer(layerName, atmosphere, worldTime) {
       const layer = getCloudLayerState(layerName, atmosphere);
-      if (layer.visibility <= 0.01) return;
+      if (layer.density <= 0.01 || layer.visibility <= 0.01) return;
 
       const clouds = cloudFields[layerName];
       for (const cloud of clouds) {
         const position = getCloudPosition(cloud, layer, worldTime);
-        const alpha = cloud.opacity * layer.visibility * layer.alphaScale;
+        const alpha = cloud.opacity * layer.visibility * layer.alphaScale * layer.density;
         if (alpha <= 0.01) continue;
 
         renderCloud(position.x, position.y, cloud.width * layer.scale, alpha, layer.maxAlpha);
@@ -114,18 +114,19 @@
     }
 
     function getCloudLayerState(layerName, atmosphere) {
-      const sky = atmosphere.skyAscent;
-      const realm = atmosphere.cloudRealm;
-      const peak = atmosphere.cloudPeak;
-      const exit = atmosphere.cloudExit;
-      const air = (1 - exit) * (1 - atmosphere.space);
-      const exitDrop = height * exit * 0.38;
+      const first = atmosphere.cloudFirst;
+      const layer = atmosphere.cloudLayer;
+      const dense = atmosphere.cloudDense;
+      const exit = atmosphere.cloudPassed;
+      const exitDrop = height * exit * 1.42;
 
       if (layerName === "background") {
+        const density = clamp(first * 0.42 + layer * 0.4 + dense * 0.18, 0, 1);
+
         return {
-          visibility: sky * air,
-          density: clamp(sky * 0.38 + realm * 0.34 + peak * 0.18 - exit * 0.72, 0, 1) * air,
-          alphaScale: 0.55 + realm * 0.24,
+          visibility: 1,
+          density,
+          alphaScale: 0.5 + density * 0.34,
           speedScale: 0.85,
           fallScale: 0.82,
           exitDrop,
@@ -135,10 +136,12 @@
       }
 
       if (layerName === "midground") {
+        const density = clamp(first * 0.14 + layer * 0.52 + dense * 0.34, 0, 1);
+
         return {
-          visibility: realm * air,
-          density: clamp(realm * 0.5 + peak * 0.35 - exit * 0.78, 0, 1) * air,
-          alphaScale: 0.66 + peak * 0.24,
+          visibility: 1,
+          density,
+          alphaScale: 0.56 + density * 0.34,
           speedScale: 1,
           fallScale: 1,
           exitDrop: exitDrop * 1.15,
@@ -147,10 +150,12 @@
         };
       }
 
+      const density = clamp(layer * 0.2 + dense * 0.8, 0, 1);
+
       return {
-        visibility: peak * air,
-        density: clamp(peak * 0.42 - exit * 0.5, 0, 0.42) * air,
-        alphaScale: 0.78 + peak * 0.22,
+        visibility: 1,
+        density,
+        alphaScale: 0.48 + density * 0.28,
         speedScale: 1.08,
         fallScale: 1.18,
         exitDrop: exitDrop * 1.3,
@@ -234,9 +239,13 @@
     function getAtmosphere(score) {
       const underground = smoothProgress(score, 0, config.undergroundEnd) * 0.12;
       const skyAscent = smoothProgress(score, config.undergroundEnd, config.skyAscentEnd);
+      const cloudFirst = smoothProgress(score, 70, config.cloudRealmStart);
+      const cloudLayer = smoothProgress(score, config.cloudRealmStart, config.cloudPeakStart);
+      const cloudDense = smoothProgress(score, config.cloudPeakStart, config.spaceStart);
       const cloudRealm = smoothProgress(score, config.cloudRealmStart, config.cloudPeakStart);
       const cloudPeak = smoothProgress(score, config.cloudPeakStart, config.cloudChaosStart);
       const cloudExit = smoothProgress(score, config.cloudChaosStart, config.spaceStart);
+      const cloudPassed = smoothProgress(score, config.spaceStart, config.spaceFull);
       const space = smoothProgress(score, config.spaceStart, config.spaceFull);
 
       const undergroundTop = mixColor("#09090c", "#111421", underground);
@@ -253,9 +262,13 @@
       return {
         underground,
         skyAscent,
+        cloudFirst,
+        cloudLayer,
+        cloudDense,
         cloudRealm,
         cloudPeak,
         cloudExit,
+        cloudPassed,
         space,
         top,
         bottom
